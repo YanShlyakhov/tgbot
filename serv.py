@@ -1,5 +1,13 @@
 from flask import Flask, url_for, request, abort
 import time
+import dataset
+
+db = dataset.connect('sqlite:///qqq')
+
+users = db['users']
+history = db['history']
+tasks = db['tasks']
+
 app = Flask(__name__)
 
 task_str = "https://dribbble.com/shots/7150930-Social-Landing-page"
@@ -35,36 +43,58 @@ def api_root():
 </form>
             """
 
-def online_users():
-    global users_online
-    global online
-    now = time.clock()
-    for user in users_online:
-        if now - user.value() < 180000:
-            online -= 1
+@app.route("/add", methods=["POST"])
+def add():
+    name = request.json.get('name')
+    nick = request.json.get('nick')
 
-@app.route('/task/<username>')
-def api_articles(username):
-    global task_str
-    global names_ready
-    global online
-    global users_online
-    print(username)
-    online_users()
-    if username not in names_for_work:
-        abort(404)
+    global users
+    user = users.find_one(name=name)
 
-    if username not in names_ready.keys():
-        names_ready[username] = []
-        users_online[username] = time.clock()
-        online += 1
-        
-    if task_str in names_ready[username]:
-        abort(404)
+    if users == None:
+        users.insert(dict(name = name, nick = nick, likes = 0))
+        return "", 201
+    
+    return "", 501
 
-    users_online[username] = time.clock()
-    names_ready[username].append(task_str)
-    return task_str
+@app.route("/like", methods=['GET'])
+def likes():
+    name = request.json.get('name')
+    url  = request.json.get('url')
+
+    global users
+    global tasks
+    user = users.find_one(name = name)
+    if user == None:
+        return "", 501
+    
+    if user['likes'] >= 2:
+        user['likes']-=2
+        users.update(user, ['id'])
+        tasks.insert(dict(url = url))
+        return "", 201
+    else:
+        return "", 501
+
+@app.route('/task', methods = ['GET'])
+def tasksGive():
+    global users
+    global history
+    nick = request.json.get('nick')
+    user = users.find_one(dict(nick = nick))
+
+    if user == None:
+        return "", 501
+
+    for t in tasks:
+        url = t['url']
+        h = history.find_one(dict(url = url, nick = nick))
+        if h == None:
+            user['likes'] += 1
+            users.update(user, ['id'])
+            history.insert(dict(url = url, nick = nick))
+            return url
+    return "", 201
 
 if __name__ == '__main__':
     app.run(host="0.0.0.0", port=5000)
